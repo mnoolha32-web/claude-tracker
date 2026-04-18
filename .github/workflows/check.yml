@@ -1,28 +1,43 @@
-name: Claude Tracker
+name: Claude Update Tracker
 
 on:
-  workflow_dispatch:
   schedule:
-    - cron: "0 5 * * *"
+    - cron: '0 5 * * *'   # 8:00 صباحاً بتوقيت الرياض (UTC+3)
+  workflow_dispatch:       # تشغيل يدوي من تبويب Actions
 
 jobs:
-  run-check:
+  check:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
-      - name: Install requirements
+      - name: Install dependencies
         run: pip install -r requirements.txt
+
+      - name: Restore state
+        uses: actions/cache@v4
+        with:
+          path: claude_state.json
+          key: claude-state-${{ github.run_id }}
+          restore-keys: claude-state-
 
       - name: Run tracker
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python claude_tracker.py
+
+      - name: Save state
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: claude_state.json
+          key: claude-state-${{ github.run_id }}
+
