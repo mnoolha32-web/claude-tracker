@@ -1,9 +1,12 @@
 import os
 import requests
 from bs4 import BeautifulSoup
+import json
 
 BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+
+STATE_FILE = "state.json"
 
 URLS = {
     "Claude Apps": "https://docs.anthropic.com/en/release-notes/claude-apps",
@@ -12,40 +15,51 @@ URLS = {
 
 def send_telegram(message):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    response = requests.post(
-        url,
-        json={
-            "chat_id": CHAT_ID,
-            "text": message
-        },
-        timeout=20
-    )
-    response.raise_for_status()
+    requests.post(url, json={
+        "chat_id": CHAT_ID,
+        "text": message
+    })
 
-def get_latest_title(url):
-    response = requests.get(url, timeout=20)
-    response.raise_for_status()
+def get_latest(url):
+    response = requests.get(url)
     soup = BeautifulSoup(response.text, "html.parser")
     text = soup.get_text("\n", strip=True)
     lines = [line.strip() for line in text.splitlines() if line.strip()]
 
-    for line in lines:
-        if "Claude" in line or "release" in line.lower() or "update" in line.lower():
-            return line
+    for i, line in enumerate(lines):
+        if "," in line:  # غالبًا سطر التاريخ
+            title = lines[i + 1] if i + 1 < len(lines) else "Unknown"
+            return title
 
-    return "وجد تحديث محتمل، لكن تعذر استخراج العنوان بدقة"
+    return None
+
+def load_state():
+    try:
+        with open(STATE_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+def save_state(state):
+    with open(STATE_FILE, "w") as f:
+        json.dump(state, f)
 
 def main():
+    old_state = load_state()
+    new_state = {}
     messages = []
-    for name, url in URLS.items():
-        try:
-            title = get_latest_title(url)
-            messages.append(f"🔔 {name}\n{title}\n{url}")
-        except Exception as e:
-            messages.append(f"⚠️ {name}\nحدث خطأ أثناء الفحص:\n{e}")
 
-    final_message = "\n\n".join(messages)
-    send_telegram(final_message)
+    for name, url in URLS.items():
+        latest = get_latest(url)
+        new_state[name] = latest
+
+        if old_state.get(name) != latest:
+            messages.append(f"🔔 تحديث جديد في {name}\n{latest}\n{url}")
+
+    if messages:
+        send_telegram("\n\n".join(messages))
+
+    save_state(new_state)
 
 if __name__ == "__main__":
     main()
